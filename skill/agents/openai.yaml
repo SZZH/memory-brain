@@ -1,0 +1,4 @@
+version: 1
+display_name: Memory Brain
+short_description: Local-first long-term memory for user preferences, project constraints, and session state.
+default_prompt: Use Memory Brain to recall relevant local memory before complex work, remember only stable reusable information, and summarize completed sessions into inspectable local storage.
