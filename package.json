@@ -37,6 +37,14 @@
     "claude"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/SZZH/memory-brain.git"
+  },
+  "homepage": "https://github.com/SZZH/memory-brain#readme",
+  "bugs": {
+    "url": "https://github.com/SZZH/memory-brain/issues"
+  },
   "engines": {
     "node": ">=20"
   },
