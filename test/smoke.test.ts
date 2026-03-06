@@ -127,3 +127,24 @@ test("staged project decision is recalled from natural language memory", async (
   assert.match(combined, /first MVP, then embedding|mvp/i);
   brain.uninstall();
 });
+
+test("auto-remembers branch deletion approval rule after merge to main", async () => {
+  const home = path.join(os.tmpdir(), `memory-brain-branch-rule-${Date.now()}`);
+  const brain = await MemoryBrain.initialize({ home });
+  const sessionId = "sess_branch_rule";
+  const rememberResult = brain.remember({
+    content:
+      "sts2-guide 项目规则：如果 bugfix 或 feature 分支的改动已经合并到 main，只有在用户明确允许后，才删除该分支。",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  assert.ok(rememberResult.memoryIds.length >= 1);
+  const recallResult = await brain.recall({
+    task: "这个项目里，分支合并到 main 后什么时候才能删除？",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  const combined = recallResult.context_blocks.map((block: ContextBlock) => block.content).join("\n");
+  assert.match(combined, /explicit user approval|delete the branch only with explicit user approval/i);
+  brain.uninstall();
+});

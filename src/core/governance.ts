@@ -233,6 +233,32 @@ function extractProjectCandidates(text: string): CandidateMemory[] {
       layer_hint: "L1"
     });
   }
+  const branchDeleteApprovalMatch =
+    text.match(
+      /(?:合并到|merge(?:d)?\s+(?:into|to)).*main.*(?:明确允许|先同意|explicit(?:ly)?\s+(?:allow|approve)|approve).*?(?:删除|删掉|删除该分支|delete)/i
+    ) ||
+    text.match(
+      /(?:删除|删掉|delete).*(?:分支|branch).*(?:前|before).*(?:必须|需要|only|需先).*(?:明确允许|先同意|explicit(?:ly)?\s+(?:allow|approve)|approve)/i
+    ) ||
+    text.match(
+      /(?:删除|删掉|delete).*(?:分支|branch).*(?:只有|only).*(?:明确允许|先同意|explicit(?:ly)?\s+(?:allow|approve)|approve)/i
+    );
+  if (branchDeleteApprovalMatch) {
+    candidates.push({
+      type: "constraint",
+      key: "branch_delete_requires_user_approval_after_main_merge",
+      summary:
+        "Project rule: after a bugfix or feature branch is merged into main, delete the branch only with explicit user approval.",
+      value: {
+        action: "delete_branch",
+        after: "merged_into_main",
+        requirement: "explicit_user_approval"
+      },
+      confidence: 0.94,
+      scope_hint: "project",
+      layer_hint: "L1"
+    });
+  }
   return candidates;
 }
 
