@@ -76,6 +76,16 @@ const EXPLICIT_PATTERNS: Array<{
     scope: "session",
     summary: () => "For this session, provide a plan without writing code.",
     value: () => "plan_only"
+  },
+  {
+    regex:
+      /(?:(?:以后|默认).*(?:发给我|发我|发送给我|发给自己|发到|传给我|传给自己).*(?:文件传输助手))|(?:(?:文件传输助手).*(?:默认|以后).*(?:发给我|发我|发送给我|发给自己|发到|传给我|传给自己))/i,
+    type: "preference",
+    key: "delivery_target",
+    scope: "global",
+    summary: () =>
+      "When the user asks to send files or screenshots from the computer, default to WeChat File Transfer Assistant.",
+    value: () => "wechat_file_transfer_assistant"
   }
 ];
 
@@ -105,6 +115,7 @@ export function extractCandidates(
   candidates.push(...extractProjectCandidates(text));
   candidates.push(...extractDecisionCandidates(text));
   candidates.push(...extractHandoffCandidates(text));
+  candidates.push(...extractExplicitRememberCandidates(text, candidates));
 
   if (mode !== "safe" && shouldAddSessionSummary(text, candidates)) {
     candidates.push({
@@ -303,6 +314,48 @@ function extractHandoffCandidates(text: string): CandidateMemory[] {
       ttl_seconds: 7 * 24 * 3600
     }
   ];
+}
+
+function extractExplicitRememberCandidates(
+  text: string,
+  existingCandidates: CandidateMemory[]
+): CandidateMemory[] {
+  if (
+    !/(记住这个|记下来|记一下|保存上下文|保存这个|记到持久化记忆|remember this|save this context)/i.test(
+      text
+    )
+  ) {
+    return [];
+  }
+
+  const hasPersistentCandidate = existingCandidates.some(
+    (candidate) => candidate.scope_hint !== "session"
+  );
+  if (hasPersistentCandidate) {
+    return [];
+  }
+
+  const scope_hint = inferExplicitRememberScope(text);
+  return [
+    {
+      type: "summary",
+      key: `explicit_remember:${stableSummaryKey(text)}`,
+      summary: compressText(text, 180),
+      confidence: 0.92,
+      scope_hint,
+      layer_hint: "L2"
+    }
+  ];
+}
+
+function inferExplicitRememberScope(text: string): ScopeType {
+  if (/(全局|长期|以后|默认|习惯|偏好)/i.test(text)) {
+    return "global";
+  }
+  if (/(项目|仓库|repo|repository|代码库)/i.test(text)) {
+    return "project";
+  }
+  return "session";
 }
 
 function shouldAddSessionSummary(

@@ -148,3 +148,43 @@ test("auto-remembers branch deletion approval rule after merge to main", async (
   assert.match(combined, /explicit user approval|delete the branch only with explicit user approval/i);
   brain.uninstall();
 });
+
+test("auto-remembers default delivery target for sending local files to the user", async () => {
+  const home = path.join(os.tmpdir(), `memory-brain-delivery-target-${Date.now()}`);
+  const brain = await MemoryBrain.initialize({ home });
+  const sessionId = "sess_delivery_target";
+  const rememberResult = brain.remember({
+    content: "以后当我说把电脑里的内容发给我时，默认发到微信文件传输助手。",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  assert.ok(rememberResult.memoryIds.length >= 1);
+  const recallResult = await brain.recall({
+    task: "回忆用户把电脑里的内容发给自己时的默认发送目标",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  const combined = recallResult.context_blocks.map((block: ContextBlock) => block.content).join("\n");
+  assert.match(combined, /File Transfer Assistant|文件传输助手/i);
+  brain.uninstall();
+});
+
+test("explicit remember intent persists unsupported global preference as fallback summary", async () => {
+  const home = path.join(os.tmpdir(), `memory-brain-explicit-remember-${Date.now()}`);
+  const brain = await MemoryBrain.initialize({ home });
+  const sessionId = "sess_explicit_remember";
+  const rememberResult = brain.remember({
+    content: "记住这个：以后当我让你把电脑里的内容发给自己时，默认发到企业微信收藏。",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  assert.ok(rememberResult.memoryIds.length >= 1);
+  const recallResult = await brain.recall({
+    task: "回忆用户明确要求记住的默认发送目标",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  const combined = recallResult.context_blocks.map((block: ContextBlock) => block.content).join("\n");
+  assert.match(combined, /企业微信收藏|默认发到企业微信收藏/i);
+  brain.uninstall();
+});
