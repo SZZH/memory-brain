@@ -109,6 +109,47 @@ test("auto-remembers staged project decisions from natural language", async () =
   brain.uninstall();
 });
 
+test("auto-remembers English durable preferences and constraints", async () => {
+  const home = path.join(os.tmpdir(), `memory-brain-english-${Date.now()}`);
+  const brain = await MemoryBrain.initialize({ home });
+  const sessionId = "sess_english";
+  const rememberResult = brain.remember({
+    content:
+      "Default to Chinese responses. Do not add new dependencies in this project. Only provide a plan in this round.",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  assert.ok(rememberResult.memoryIds.length >= 2);
+  const recallResult = await brain.recall({
+    task: "continue this project with known defaults and constraints",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  const combined = recallResult.context_blocks.map((block: ContextBlock) => block.content).join("\n");
+  assert.match(combined, /Chinese|dependencies|plan/i);
+  brain.uninstall();
+});
+
+test("auto-remembers durable reflection insight", async () => {
+  const home = path.join(os.tmpdir(), `memory-brain-reflection-${Date.now()}`);
+  const brain = await MemoryBrain.initialize({ home });
+  const sessionId = "sess_reflection";
+  const rememberResult = brain.remember({
+    content: "I learned from this incident that logs must be structured.",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  assert.ok(rememberResult.memoryIds.length >= 1);
+  const recallResult = await brain.recall({
+    task: "what did I learn from the incident",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  const combined = recallResult.context_blocks.map((block: ContextBlock) => block.content).join("\n");
+  assert.match(combined, /logs must be structured|incident/i);
+  brain.uninstall();
+});
+
 test("staged project decision is recalled from natural language memory", async () => {
   const home = path.join(os.tmpdir(), `memory-brain-decision-recall-${Date.now()}`);
   const brain = await MemoryBrain.initialize({ home });

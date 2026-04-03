@@ -14,7 +14,7 @@ const EXPLICIT_PATTERNS: Array<{
   value: (match: RegExpMatchArray) => unknown;
 }> = [
   {
-    regex: /(以后|默认).*(中文|Chinese)/i,
+    regex: /(以后|默认).*(中文|Chinese)|(?:default|prefer).*(Chinese|zh[-_ ]?CN)/i,
     type: "preference",
     key: "language",
     scope: "global",
@@ -22,7 +22,7 @@ const EXPLICIT_PATTERNS: Array<{
     value: () => "zh-CN"
   },
   {
-    regex: /(以后|默认).*(英文|English)/i,
+    regex: /(以后|默认).*(英文|English)|(?:default|prefer).*(English|en[-_ ]?US)/i,
     type: "preference",
     key: "language",
     scope: "global",
@@ -62,7 +62,8 @@ const EXPLICIT_PATTERNS: Array<{
     value: () => "minimal_changes"
   },
   {
-    regex: /(不引入|不要引入).*(新依赖|dependency)/i,
+    regex:
+      /(不引入|不要引入).*(新依赖|dependency)|(?:do not|don't|avoid).*(add|introduc[e]?|us[e]?).*(new )?dependencies?/i,
     type: "constraint",
     key: "dependency_policy",
     scope: "project",
@@ -70,7 +71,8 @@ const EXPLICIT_PATTERNS: Array<{
     value: () => "avoid_new_dependencies"
   },
   {
-    regex: /(先|这一轮).*(只给方案|不要写代码)/i,
+    regex:
+      /(先|这一轮).*(只给方案|不要写代码)|(?:this round|for now).*(only|just).*(plan).*(?:no code|in this round|for this round)?|(?:only|just).*(provide|give).*(plan).*(?:no code|in this round|for this round)?/i,
     type: "session_boundary",
     key: "execution_mode",
     scope: "session",
@@ -115,6 +117,7 @@ export function extractCandidates(
   candidates.push(...extractProjectCandidates(text));
   candidates.push(...extractDecisionCandidates(text));
   candidates.push(...extractHandoffCandidates(text));
+  candidates.push(...extractDurableReflectionCandidates(text));
   candidates.push(...extractExplicitRememberCandidates(text, candidates));
 
   if (mode !== "safe" && shouldAddSessionSummary(text, candidates)) {
@@ -195,7 +198,53 @@ function extractIdentityCandidates(text: string): CandidateMemory[] {
       layer_hint: "L1"
     });
   }
+  const roleMatch =
+    text.match(
+      /(?:我是一名|我是)([A-Za-z\u4e00-\u9fa5·•]{2,20})(?:工程师|开发者|产品经理|设计师)/
+    ) || text.match(/i am an?\s+([a-z -]{2,30}(?:engineer|developer|designer|manager))/i);
+  if (roleMatch) {
+    const role = roleMatch[1].trim();
+    candidates.push({
+      type: "identity",
+      key: "user_role",
+      subject: role,
+      summary: `The user role is ${role}.`,
+      value: role,
+      confidence: 0.9,
+      scope_hint: "global",
+      layer_hint: "L1"
+    });
+  }
   return candidates;
+}
+
+function extractDurableReflectionCandidates(text: string): CandidateMemory[] {
+  const reflectionMatch =
+    text.match(/这次.*让我意识到(.{4,120})/i) ||
+    text.match(/我学到(.{4,120})/i) ||
+    text.match(/i learned from .* that (.{4,120})/i) ||
+    text.match(/this taught me that (.{4,120})/i);
+  if (!reflectionMatch) {
+    return [];
+  }
+  const insight = reflectionMatch[1].trim().replace(/[。.!]+$/, "");
+  if (!insight) {
+    return [];
+  }
+  return [
+    {
+      type: "decision",
+      key: `durable_insight:${normalizeKey(insight).slice(0, 30) || "insight"}`,
+      summary: `Durable insight: ${insight}.`,
+      value: {
+        kind: "insight",
+        text: insight
+      },
+      confidence: 0.9,
+      scope_hint: "global",
+      layer_hint: "L1"
+    }
+  ];
 }
 
 function extractProjectCandidates(text: string): CandidateMemory[] {
