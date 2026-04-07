@@ -95,8 +95,10 @@ memory-brain status
 After setup, the host can treat requests like these as memory actions by default:
 
 - "记住这个，我一会换线程继续"
+- "下次继续"
 - "继续刚才那个项目"
 - "以后默认中文回答"
+- "always use concise answers"
 - "这个项目不要引入新依赖"
 - "remember this"
 - "save this context"

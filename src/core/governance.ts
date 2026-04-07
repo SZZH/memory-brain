@@ -14,7 +14,8 @@ const EXPLICIT_PATTERNS: Array<{
   value: (match: RegExpMatchArray) => unknown;
 }> = [
   {
-    regex: /(以后|默认).*(中文|Chinese)|(?:default|prefer).*(Chinese|zh[-_ ]?CN)/i,
+    regex:
+      /(?:以后|默认|长期|下次继续|remember|default|always).*(中文|Chinese)|(?:default|prefer|always).*(Chinese|zh[-_ ]?CN)/i,
     type: "preference",
     key: "language",
     scope: "global",
@@ -22,7 +23,8 @@ const EXPLICIT_PATTERNS: Array<{
     value: () => "zh-CN"
   },
   {
-    regex: /(以后|默认).*(英文|English)|(?:default|prefer).*(English|en[-_ ]?US)/i,
+    regex:
+      /(?:以后|默认|长期|下次继续|remember|default|always).*(英文|English)|(?:default|prefer|always).*(English|en[-_ ]?US)/i,
     type: "preference",
     key: "language",
     scope: "global",
@@ -30,7 +32,7 @@ const EXPLICIT_PATTERNS: Array<{
     value: () => "en-US"
   },
   {
-    regex: /(简洁|简短|concise)/i,
+    regex: /(?:以后|默认|长期|下次继续|remember|default|always).*(简洁|简短|concise|short)/i,
     type: "preference",
     key: "response_style",
     scope: "global",
@@ -38,7 +40,8 @@ const EXPLICIT_PATTERNS: Array<{
     value: () => "concise"
   },
   {
-    regex: /(工程化|engineering[- ]?first|engineering concise)/i,
+    regex:
+      /(?:以后|默认|长期|下次继续|remember|default|always).*(工程化|engineering[- ]?first|engineering concise|工程优先)/i,
     type: "preference",
     key: "response_style",
     scope: "global",
@@ -46,7 +49,7 @@ const EXPLICIT_PATTERNS: Array<{
     value: () => "engineering_concise"
   },
   {
-    regex: /(详细|详细一些|detailed)/i,
+    regex: /(?:以后|默认|长期|下次继续|remember|default|always).*(详细|详细一些|detailed)/i,
     type: "preference",
     key: "response_style",
     scope: "global",
@@ -54,7 +57,8 @@ const EXPLICIT_PATTERNS: Array<{
     value: () => "detailed"
   },
   {
-    regex: /(最小改动|minimal changes)/i,
+    regex:
+      /(?:以后|默认|长期|下次继续|remember|default|always).*(最小改动|minimal changes?|minimal change)/i,
     type: "constraint",
     key: "change_strategy",
     scope: "project",
@@ -63,7 +67,7 @@ const EXPLICIT_PATTERNS: Array<{
   },
   {
     regex:
-      /(不引入|不要引入).*(新依赖|dependency)|(?:do not|don't|avoid).*(add|introduc[e]?|us[e]?).*(new )?dependencies?/i,
+      /(不引入|不要引入).*(新依赖|dependency)|(?:do not|don't|avoid|always avoid).*(add|introduc[e]?|us[e]?).*(new )?dependencies?/i,
     type: "constraint",
     key: "dependency_policy",
     scope: "project",
@@ -72,7 +76,7 @@ const EXPLICIT_PATTERNS: Array<{
   },
   {
     regex:
-      /(先|这一轮).*(只给方案|不要写代码)|(?:this round|for now).*(only|just).*(plan).*(?:no code|in this round|for this round)?|(?:only|just).*(provide|give).*(plan).*(?:no code|in this round|for this round)?/i,
+      /(先|这一轮).*(只给方案|不要写代码)|(?:this round|for now).*(only|just).*(plan).*(?:no code|in this round|for this round)?|(?:only|just).*(provide|give).*(plan).*(?:no code|in this round|for this round)?|(?:默认|always|default).*(?:只给方案|plan only|just plan)/i,
     type: "session_boundary",
     key: "execution_mode",
     scope: "session",
@@ -116,6 +120,7 @@ export function extractCandidates(
   candidates.push(...extractIdentityCandidates(text));
   candidates.push(...extractProjectCandidates(text));
   candidates.push(...extractDecisionCandidates(text));
+  candidates.push(...extractStablePreferenceCandidates(text));
   candidates.push(...extractHandoffCandidates(text));
   candidates.push(...extractDurableReflectionCandidates(text));
   candidates.push(...extractExplicitRememberCandidates(text, candidates));
@@ -348,7 +353,11 @@ function extractDecisionCandidates(text: string): CandidateMemory[] {
 }
 
 function extractHandoffCandidates(text: string): CandidateMemory[] {
-  if (!/(换线程|新线程|回头继续|之后继续|一会继续|later continue|continue in another thread|pick this up later)/i.test(text)) {
+  if (
+    !/(换线程|新线程|回头继续|之后继续|一会继续|下次继续|以后继续|later continue|continue in another thread|pick this up later|resume next time|next time continue)/i.test(
+      text
+    )
+  ) {
     return [];
   }
   return [
@@ -363,6 +372,94 @@ function extractHandoffCandidates(text: string): CandidateMemory[] {
       ttl_seconds: 7 * 24 * 3600
     }
   ];
+}
+
+function extractStablePreferenceCandidates(text: string): CandidateMemory[] {
+  const cueMatch = text.match(
+    /(?:以后|默认|长期|下次继续|remember|default|always|prefer|preferably).*/i
+  );
+  if (!cueMatch) {
+    return [];
+  }
+  const candidates: CandidateMemory[] = [];
+  if (/(中文|chinese|zh[-_ ]?cn)/i.test(text)) {
+    candidates.push({
+      type: "preference",
+      key: "language",
+      summary: "Respond in Chinese by default.",
+      value: "zh-CN",
+      confidence: 0.9,
+      scope_hint: "global",
+      layer_hint: "L1"
+    });
+  }
+  if (/(英文|english|en[-_ ]?us)/i.test(text)) {
+    candidates.push({
+      type: "preference",
+      key: "language",
+      summary: "Respond in English by default.",
+      value: "en-US",
+      confidence: 0.9,
+      scope_hint: "global",
+      layer_hint: "L1"
+    });
+  }
+  if (/(简洁|简短|concise|short)/i.test(text)) {
+    candidates.push({
+      type: "preference",
+      key: "response_style",
+      summary: "Prefer concise answers.",
+      value: "concise",
+      confidence: 0.84,
+      scope_hint: "global",
+      layer_hint: "L1"
+    });
+  }
+  if (/(工程化|engineering[- ]?first|engineering concise|工程优先)/i.test(text)) {
+    candidates.push({
+      type: "preference",
+      key: "response_style",
+      summary: "Prefer engineering-oriented concise answers.",
+      value: "engineering_concise",
+      confidence: 0.86,
+      scope_hint: "global",
+      layer_hint: "L1"
+    });
+  }
+  if (/(详细|详细一些|detailed)/i.test(text)) {
+    candidates.push({
+      type: "preference",
+      key: "response_style",
+      summary: "Prefer detailed answers when needed.",
+      value: "detailed",
+      confidence: 0.84,
+      scope_hint: "global",
+      layer_hint: "L1"
+    });
+  }
+  if (/(最小改动|minimal changes?|minimal change)/i.test(text)) {
+    candidates.push({
+      type: "constraint",
+      key: "change_strategy",
+      summary: "Prefer minimal changes in this project.",
+      value: "minimal_changes",
+      confidence: 0.88,
+      scope_hint: "project",
+      layer_hint: "L1"
+    });
+  }
+  if (/(不引入|不要引入|avoid).*(新依赖|dependency|dependencies)/i.test(text)) {
+    candidates.push({
+      type: "constraint",
+      key: "dependency_policy",
+      summary: "Avoid introducing new dependencies in this project.",
+      value: "avoid_new_dependencies",
+      confidence: 0.87,
+      scope_hint: "project",
+      layer_hint: "L1"
+    });
+  }
+  return candidates;
 }
 
 function extractExplicitRememberCandidates(
@@ -398,7 +495,7 @@ function extractExplicitRememberCandidates(
 }
 
 function inferExplicitRememberScope(text: string): ScopeType {
-  if (/(全局|长期|以后|默认|习惯|偏好)/i.test(text)) {
+  if (/(全局|长期|以后|默认|习惯|偏好|default|always)/i.test(text)) {
     return "global";
   }
   if (/(项目|仓库|repo|repository|代码库)/i.test(text)) {

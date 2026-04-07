@@ -6,7 +6,7 @@ import { buildPaths, type MemoryPaths } from "./paths.js";
 import { resolveProject } from "./project.js";
 import { extractCandidates, routeLayer, shouldPersistCandidate, compressText } from "./governance.js";
 import { openDatabase } from "../db/database.js";
-import { ensureDir, pathExists, removeDir } from "../utils/fs.js";
+import { appendUtf8, ensureDir, pathExists, removeDir } from "../utils/fs.js";
 import { makeId } from "../utils/id.js";
 import { nowIso } from "../utils/time.js";
 import { MemoryStore } from "./store.js";
@@ -21,6 +21,7 @@ import type {
   AppConfig,
   ContextBlock,
   DiagnosticCheck,
+  CandidateMemory,
   MemoryRecord,
   RecallRequest,
   RecallResponse,
@@ -215,47 +216,109 @@ export class MemoryBrain {
       });
     }
     const sessionId = input.sessionId ?? makeId("sess");
-    const eventId = this.store.insertRawEvent({
-      user_id: this.config.user.id,
-      session_id: sessionId,
-      project_id: project?.id,
-      source: input.source ?? "cli",
-      content: input.content
-    });
-    const candidates = extractCandidates(input.content, this.config.memory.mode);
+    let eventId = "";
     const memoryIds: string[] = [];
-    for (const candidate of candidates) {
-      if (!shouldPersistCandidate(candidate, this.config.memory.mode)) {
-        continue;
-      }
-      const scopeType = resolveScopeType(
-        this.config.scope.default_mode,
-        input.scopeHint,
-        candidate.scope_hint
-      );
-      const scopeId =
-        scopeType === "global"
-          ? "global"
-          : scopeType === "project"
-            ? project?.id ?? "project_unknown"
-            : sessionId;
-      const layer = routeLayer(candidate);
-      const memoryId = this.store.insertMemory({
+    const failures: Array<{
+      candidate: CandidateMemory;
+      scopeType: string;
+      scopeId: string;
+      error: string;
+    }> = [];
+
+    try {
+      eventId = this.store.insertRawEvent({
         user_id: this.config.user.id,
-        scope_type: scopeType,
-        scope_id: scopeId,
-        layer,
-        candidate,
-        source_event_id: eventId
+        session_id: sessionId,
+        project_id: project?.id,
+        source: input.source ?? "cli",
+        content: input.content
       });
-      memoryIds.push(memoryId);
-      if (scopeType === "global") {
-        writeGlobalProfile(this.paths, [`- ${candidate.summary}`]);
-      } else if (scopeType === "project" && project) {
-        writeProjectDecision(this.paths, project.id, candidate.type, candidate.summary);
+      const candidates = extractCandidates(input.content, this.config.memory.mode);
+      for (const candidate of candidates) {
+        if (!shouldPersistCandidate(candidate, this.config.memory.mode)) {
+          continue;
+        }
+        const scopeType = resolveMemoryScope(
+          this.config.scope.default_mode,
+          input.scopeHint,
+          candidate.scope_hint,
+          candidate.confidence
+        );
+        const scopeId =
+          scopeType === "global"
+            ? "global"
+            : scopeType === "project"
+              ? project?.id ?? "project_unknown"
+              : sessionId;
+        const layer = routeLayer(candidate);
+        try {
+          const memoryId = this.store.insertMemory({
+            user_id: this.config.user.id,
+            scope_type: scopeType,
+            scope_id: scopeId,
+            layer,
+            candidate,
+            source_event_id: eventId
+          });
+          memoryIds.push(memoryId);
+          if (scopeType === "global") {
+            writeGlobalProfile(this.paths, [`- ${candidate.summary}`]);
+          } else if (scopeType === "project" && project) {
+            writeProjectDecision(this.paths, project.id, candidate.type, candidate.summary);
+          }
+        } catch (error) {
+          failures.push({
+            candidate,
+            scopeType,
+            scopeId,
+            error: error instanceof Error ? error.message : String(error)
+          });
+        }
       }
+      if (failures.length > 0) {
+        this.appendRememberFailures({
+          sessionId,
+          projectId: project?.id,
+          sourceEventId: eventId,
+          failures,
+          inputText: input.content
+        });
+      }
+      if (memoryIds.length === 0 && failures.length > 0) {
+        throw new Error(
+          `remember failed for ${failures.length} candidate(s); see ${this.paths.logsDir}/remember-failures.ndjson`
+        );
+      }
+      return { eventId, memoryIds };
+    } catch (error) {
+      if (!eventId) {
+        this.appendRememberFailures({
+          sessionId,
+          projectId: project?.id,
+          sourceEventId: undefined,
+          failures: [
+            {
+              candidate: {
+                type: "raw_event",
+                summary: input.content,
+                confidence: 0,
+                scope_hint: input.scopeHint ?? "session"
+              },
+              scopeType: input.scopeHint ?? "session",
+              scopeId:
+                input.scopeHint === "global"
+                  ? "global"
+                  : input.scopeHint === "project"
+                    ? project?.id ?? "project_unknown"
+                    : sessionId,
+              error: error instanceof Error ? error.message : String(error)
+            }
+          ],
+          inputText: input.content
+        });
+      }
+      throw error;
     }
-    return { eventId, memoryIds };
   }
 
   async recall(input: {
@@ -517,6 +580,27 @@ export class MemoryBrain {
     });
     return vector;
   }
+
+  private appendRememberFailures(payload: RememberFailurePayload): void {
+    ensureDir(this.paths.logsDir);
+    const filePath = `${this.paths.logsDir}/remember-failures.ndjson`;
+    for (const failure of payload.failures) {
+      appendUtf8(
+        filePath,
+        `${JSON.stringify({
+          at: nowIso(),
+          sessionId: payload.sessionId,
+          projectId: payload.projectId ?? null,
+          sourceEventId: payload.sourceEventId ?? null,
+          inputText: payload.inputText,
+          scopeType: failure.scopeType,
+          scopeId: failure.scopeId,
+          candidate: failure.candidate,
+          error: failure.error
+        })}\n`
+      );
+    }
+  }
 }
 
 function blockType(type: string, scope: string): string {
@@ -566,3 +650,32 @@ function resolveScopeType(
   }
   return candidateScope;
 }
+
+const HIGH_CONFIDENCE_SCOPE_THRESHOLD = 0.85;
+
+export function resolveMemoryScope(
+  scopeMode: AppConfig["scope"]["default_mode"],
+  forcedScope: "global" | "project" | "session" | undefined,
+  candidateScope: "global" | "project" | "session",
+  confidence: number
+): "global" | "project" | "session" {
+  const resolved = resolveScopeType(scopeMode, forcedScope, candidateScope);
+  // Explicit user scope wins; otherwise only high-confidence candidates can escape session scope.
+  if (forcedScope || resolved === "session") {
+    return resolved;
+  }
+  return confidence >= HIGH_CONFIDENCE_SCOPE_THRESHOLD ? resolved : "session";
+}
+
+type RememberFailurePayload = {
+  sessionId: string;
+  projectId?: string | null;
+  sourceEventId?: string;
+  inputText: string;
+  failures: Array<{
+    candidate: CandidateMemory;
+    scopeType: string;
+    scopeId: string;
+    error: string;
+  }>;
+};

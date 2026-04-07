@@ -92,6 +92,8 @@ export interface MemoryRecord {
   confidence: number;
   status: string;
   source_event_id: string | null;
+  supersedes_memory_id: string | null;
+  superseded_by_memory_id: string | null;
   ttl_seconds: number | null;
   created_at: string;
   updated_at: string;

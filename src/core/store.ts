@@ -89,52 +89,75 @@ export class MemoryStore {
           input.candidate.key
         )
       : null;
-    const id = existing?.id ?? makeId("mem");
+    const id = makeId("mem");
     const now = nowIso();
-    this.db
-      .prepare(
-        `INSERT INTO memories
-          (id, user_id, agent_id, scope_type, scope_id, layer, type, subject, memory_key, value_json, summary, confidence, status, source_event_id, ttl_seconds, created_at, updated_at, last_accessed_at)
-         VALUES
-          (@id, @user_id, @agent_id, @scope_type, @scope_id, @layer, @type, @subject, @memory_key, @value_json, @summary, @confidence, @status, @source_event_id, @ttl_seconds, @created_at, @updated_at, @last_accessed_at)
-         ON CONFLICT(id) DO UPDATE SET
-          layer = excluded.layer,
-          type = excluded.type,
-          subject = excluded.subject,
-          memory_key = excluded.memory_key,
-          value_json = excluded.value_json,
-          summary = excluded.summary,
-          confidence = excluded.confidence,
-          status = excluded.status,
-          source_event_id = excluded.source_event_id,
-          ttl_seconds = excluded.ttl_seconds,
-          updated_at = excluded.updated_at`
-      )
-      .run({
+    return this.db.transaction(() => {
+      this.db
+        .prepare(
+          `INSERT INTO memories
+            (id, user_id, agent_id, scope_type, scope_id, layer, type, subject, memory_key, value_json, summary, confidence, status, source_event_id, supersedes_memory_id, superseded_by_memory_id, ttl_seconds, created_at, updated_at, last_accessed_at)
+           VALUES
+            (@id, @user_id, @agent_id, @scope_type, @scope_id, @layer, @type, @subject, @memory_key, @value_json, @summary, @confidence, @status, @source_event_id, @supersedes_memory_id, @superseded_by_memory_id, @ttl_seconds, @created_at, @updated_at, @last_accessed_at)
+           ON CONFLICT(id) DO UPDATE SET
+            layer = excluded.layer,
+            type = excluded.type,
+            subject = excluded.subject,
+            memory_key = excluded.memory_key,
+            value_json = excluded.value_json,
+            summary = excluded.summary,
+            confidence = excluded.confidence,
+            status = excluded.status,
+            source_event_id = excluded.source_event_id,
+            supersedes_memory_id = excluded.supersedes_memory_id,
+            superseded_by_memory_id = excluded.superseded_by_memory_id,
+            ttl_seconds = excluded.ttl_seconds,
+            updated_at = excluded.updated_at`
+        )
+        .run({
+          id,
+          user_id: input.user_id,
+          agent_id: input.agent_id ?? null,
+          scope_type: input.scope_type,
+          scope_id: input.scope_id,
+          layer: input.layer,
+          type: input.candidate.type,
+          subject: input.candidate.subject ?? null,
+          memory_key: input.candidate.key ?? null,
+          value_json:
+            input.candidate.value === undefined
+              ? null
+              : JSON.stringify(input.candidate.value),
+          summary: input.candidate.summary,
+          confidence: input.candidate.confidence,
+          status: "active",
+          source_event_id: input.source_event_id ?? null,
+          supersedes_memory_id: existing?.id ?? null,
+          superseded_by_memory_id: null,
+          ttl_seconds: input.candidate.ttl_seconds ?? null,
+          created_at: now,
+          updated_at: now,
+          last_accessed_at: null
+        });
+      if (existing) {
+        this.db
+          .prepare(
+            `UPDATE memories
+             SET status = 'superseded',
+                 superseded_by_memory_id = ?,
+                 updated_at = ?
+             WHERE id = ?`
+          )
+          .run([id, now, existing.id]);
+      }
+      this.refreshFts(
         id,
-        user_id: input.user_id,
-        agent_id: input.agent_id ?? null,
-        scope_type: input.scope_type,
-        scope_id: input.scope_id,
-        layer: input.layer,
-        type: input.candidate.type,
-        subject: input.candidate.subject ?? null,
-        memory_key: input.candidate.key ?? null,
-        value_json:
-          input.candidate.value === undefined
-            ? null
-            : JSON.stringify(input.candidate.value),
-        summary: input.candidate.summary,
-        confidence: input.candidate.confidence,
-        status: "active",
-        source_event_id: input.source_event_id ?? null,
-        ttl_seconds: input.candidate.ttl_seconds ?? null,
-        created_at: existing?.created_at ?? now,
-        updated_at: now,
-        last_accessed_at: null
-      });
-    this.refreshFts(id, input.scope_type, input.scope_id, input.layer, input.candidate.summary);
-    return id;
+        input.scope_type,
+        input.scope_id,
+        input.layer,
+        input.candidate.summary
+      );
+      return id;
+    });
   }
 
   private refreshFts(

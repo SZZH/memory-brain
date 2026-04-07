@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS memories (
   confidence REAL DEFAULT 0.5,
   status TEXT DEFAULT 'active',
   source_event_id TEXT,
+  supersedes_memory_id TEXT,
+  superseded_by_memory_id TEXT,
   ttl_seconds INTEGER,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,

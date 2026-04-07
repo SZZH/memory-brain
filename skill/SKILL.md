@@ -9,7 +9,7 @@ Use this skill when the user wants persistent memory that is local, inspectable,
 
 ## Use It For
 
-- Natural-language requests like “记住这个”, “保存上下文”, “我一会换线程继续”, “继续刚才那个项目”, “我的名字叫…”, “以后默认中文回答”, “这件事让我意识到…”, “我的经历是…”
+- Natural-language requests like “记住这个”, “保存上下文”, “我一会换线程继续”, “下次继续”, “继续刚才那个项目”, “我的名字叫…”, “以后默认中文回答”, “always use…”, “这件事让我意识到…”, “我的经历是…”
 - Remembering stable user preferences such as language and answer style
 - Remembering project rules such as minimal-change constraints
 - Persisting session-only instructions that should not become global defaults
@@ -41,10 +41,12 @@ This skill should trigger for both Chinese and English requests such as:
 - 记住这个
 - 保存一下当前上下文
 - 我一会换线程继续
+- 下次继续
 - 继续刚才那个项目
 - 我们刚才做到哪了
 - 我的名字叫…
 - 以后默认中文回答
+- always use ...
 - 这个项目不要引入新依赖
 - 这件事让我意识到…
 - 我的经历是…
@@ -59,6 +61,7 @@ This skill should trigger for both Chinese and English requests such as:
 - this taught me ...
 - my experience is ...
 - I believe ...
+- stability-cue phrasing like default / always / 长期 / 以后 / 下次继续
 
 ## Host Workflow
 

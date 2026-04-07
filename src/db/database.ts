@@ -13,6 +13,7 @@ export interface DatabaseConnection {
   exec(sql: string): void;
   prepare(sql: string): PreparedStatement;
   run(sql: string, params?: BindParams): { changes: number };
+  transaction<T>(fn: () => T): T;
   save(): void;
 }
 
@@ -26,6 +27,9 @@ type SqlJsDatabase = any;
 type SqlJsStatic = any;
 
 class SqlJsDatabaseConnection implements DatabaseConnection {
+  private transactionDepth = 0;
+  private pendingSave = false;
+
   constructor(
     private readonly db: SqlJsDatabase,
     private readonly databaseFile: string
@@ -53,6 +57,37 @@ class SqlJsDatabaseConnection implements DatabaseConnection {
   }
 
   save(): void {
+    if (this.transactionDepth > 0) {
+      this.pendingSave = true;
+      return;
+    }
+    this.flush();
+  }
+
+  transaction<T>(fn: () => T): T {
+    this.db.run("BEGIN TRANSACTION");
+    this.transactionDepth += 1;
+    try {
+      const result = fn();
+      this.db.run("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        this.db.run("ROLLBACK");
+      } catch {
+        // Ignore rollback failures and rethrow the original error.
+      }
+      throw error;
+    } finally {
+      this.transactionDepth = Math.max(0, this.transactionDepth - 1);
+      if (this.transactionDepth === 0 && this.pendingSave) {
+        this.pendingSave = false;
+        this.flush();
+      }
+    }
+  }
+
+  private flush(): void {
     ensureDir(path.dirname(this.databaseFile));
     writeFileSync(this.databaseFile, this.db.export());
   }
@@ -155,7 +190,38 @@ export async function openDatabase(databaseFile: string): Promise<DatabaseConnec
   const db = new SQL.Database(data);
   db.run("PRAGMA foreign_keys = ON");
   db.run(SCHEMA_SQL);
+  migrateSchema(db);
   const connection = new SqlJsDatabaseConnection(db, databaseFile);
   connection.save();
   return connection;
+}
+
+function migrateSchema(db: SqlJsDatabase): void {
+  const columns = new Set<string>();
+  const stmt = db.prepare("PRAGMA table_info(memories)");
+  try {
+    while (stmt.step()) {
+      const row = stmt.getAsObject() as { name?: string };
+      if (row.name) {
+        columns.add(row.name);
+      }
+    }
+  } finally {
+    stmt.free();
+  }
+  const migrations: Array<{ column: string; sql: string }> = [
+    {
+      column: "supersedes_memory_id",
+      sql: "ALTER TABLE memories ADD COLUMN supersedes_memory_id TEXT"
+    },
+    {
+      column: "superseded_by_memory_id",
+      sql: "ALTER TABLE memories ADD COLUMN superseded_by_memory_id TEXT"
+    }
+  ];
+  for (const migration of migrations) {
+    if (!columns.has(migration.column)) {
+      db.run(migration.sql);
+    }
+  }
 }
