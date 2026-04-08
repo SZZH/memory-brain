@@ -303,6 +303,33 @@ program
   );
 
 program
+  .command("session-check")
+  .description(
+    "Record one session turn, run mandatory memory check every 2 turns, and remember only when durable candidates are found."
+  )
+  .requiredOption("--text <text>", "Latest turn text for memory-worthiness check")
+  .requiredOption("--session <id>", "Session ID")
+  .option("--home <path>", "Memory home path")
+  .option("--scope <scope>", "Force scope for writes: global|project|session")
+  .option("--workspace <path>", "Workspace path for project scope", process.cwd())
+  .option("--git-root <path>", "Optional git root")
+  .option("--source <source>", "Source tag", "cli-session-check")
+  .action(async (options) =>
+    withBrain(options.home, async (brain) => {
+      printObject(
+        brain.sessionCheck({
+          content: options.text,
+          sessionId: options.session,
+          scopeHint: options.scope,
+          workspacePath: options.workspace,
+          gitRoot: options.gitRoot,
+          source: options.source
+        })
+      );
+    })
+  );
+
+program
   .command("inspect")
   .description("Inspect a memory record or recent retrieval logs.")
   .option("--home <path>", "Memory home path")

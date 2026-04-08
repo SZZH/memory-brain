@@ -80,4 +80,11 @@ CREATE TABLE IF NOT EXISTS memory_fts (
   content TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS session_runtime (
+  session_id TEXT PRIMARY KEY,
+  turn_counter INTEGER NOT NULL DEFAULT 0,
+  last_memory_check_turn INTEGER NOT NULL DEFAULT 0,
+  updated_at TEXT NOT NULL
+);
+
 `;

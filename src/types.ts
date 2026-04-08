@@ -143,6 +143,25 @@ export interface SessionSummaryResult {
   summaryPath: string;
 }
 
+export interface SessionRuntimeState {
+  session_id: string;
+  turn_counter: number;
+  last_memory_check_turn: number;
+  updated_at: string;
+}
+
+export interface SessionCheckResult {
+  session_id: string;
+  turn_counter: number;
+  check_triggered: boolean;
+  check_reason: string;
+  hit: boolean;
+  candidate_count: number;
+  remembered: boolean;
+  memory_ids: string[];
+  event_id?: string;
+}
+
 export interface MemoryEmbeddingRecord {
   memory_id: string;
   provider: string;

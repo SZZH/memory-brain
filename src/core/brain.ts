@@ -19,12 +19,13 @@ import {
 } from "./summary.js";
 import type {
   AppConfig,
+  CandidateMemory,
   ContextBlock,
   DiagnosticCheck,
-  CandidateMemory,
   MemoryRecord,
   RecallRequest,
   RecallResponse,
+  SessionCheckResult,
   SessionSummaryResult
 } from "../types.js";
 
@@ -321,6 +322,68 @@ export class MemoryBrain {
     }
   }
 
+  sessionCheck(input: {
+    content: string;
+    sessionId: string;
+    scopeHint?: "global" | "project" | "session";
+    workspacePath?: string;
+    gitRoot?: string;
+    source?: string;
+  }): SessionCheckResult {
+    const state = this.store.bumpSessionTurn(input.sessionId);
+    const shouldCheck =
+      state.turn_counter % 2 === 0 &&
+      state.last_memory_check_turn !== state.turn_counter;
+
+    if (!shouldCheck) {
+      return {
+        session_id: input.sessionId,
+        turn_counter: state.turn_counter,
+        check_triggered: false,
+        check_reason: "turn_not_due",
+        hit: false,
+        candidate_count: 0,
+        remembered: false,
+        memory_ids: []
+      };
+    }
+
+    this.store.markSessionMemoryChecked(input.sessionId, state.turn_counter);
+    const candidates = this.getPersistableCandidates(input.content);
+    if (candidates.length === 0) {
+      return {
+        session_id: input.sessionId,
+        turn_counter: state.turn_counter,
+        check_triggered: true,
+        check_reason: "even_turn_check",
+        hit: false,
+        candidate_count: 0,
+        remembered: false,
+        memory_ids: []
+      };
+    }
+
+    const result = this.remember({
+      content: input.content,
+      scopeHint: input.scopeHint,
+      workspacePath: input.workspacePath,
+      gitRoot: input.gitRoot,
+      sessionId: input.sessionId,
+      source: input.source ?? "session-check"
+    });
+    return {
+      session_id: input.sessionId,
+      turn_counter: state.turn_counter,
+      check_triggered: true,
+      check_reason: "even_turn_check",
+      hit: true,
+      candidate_count: candidates.length,
+      remembered: result.memoryIds.length > 0,
+      memory_ids: result.memoryIds,
+      event_id: result.eventId
+    };
+  }
+
   async recall(input: {
     task: string;
     workspacePath?: string;
@@ -600,6 +663,12 @@ export class MemoryBrain {
         })}\n`
       );
     }
+  }
+
+  private getPersistableCandidates(content: string): CandidateMemory[] {
+    return extractCandidates(content, this.config.memory.mode).filter((candidate) =>
+      shouldPersistCandidate(candidate, this.config.memory.mode)
+    );
   }
 }
 

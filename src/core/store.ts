@@ -4,7 +4,8 @@ import type {
   MemoryEmbeddingRecord,
   MemoryRecord,
   RecallRequest,
-  ScopeType
+  ScopeType,
+  SessionRuntimeState
 } from "../types.js";
 import { makeId } from "../utils/id.js";
 import { nowIso } from "../utils/time.js";
@@ -383,5 +384,36 @@ export class MemoryStore {
         vector_json: JSON.stringify(input.vector),
         updated_at: nowIso()
       });
+  }
+
+  bumpSessionTurn(sessionId: string): SessionRuntimeState {
+    const now = nowIso();
+    this.db
+      .prepare(
+        `INSERT INTO session_runtime (session_id, turn_counter, last_memory_check_turn, updated_at)
+         VALUES (?, 1, 0, ?)
+         ON CONFLICT(session_id) DO UPDATE SET
+           turn_counter = session_runtime.turn_counter + 1,
+           updated_at = excluded.updated_at`
+      )
+      .run([sessionId, now]);
+    const state = this.db
+      .prepare("SELECT * FROM session_runtime WHERE session_id = ?")
+      .get<SessionRuntimeState>(sessionId);
+    if (!state) {
+      throw new Error(`Failed to bump session turn for session ${sessionId}.`);
+    }
+    return state;
+  }
+
+  markSessionMemoryChecked(sessionId: string, turn: number): void {
+    const now = nowIso();
+    this.db
+      .prepare(
+        `UPDATE session_runtime
+         SET last_memory_check_turn = ?, updated_at = ?
+         WHERE session_id = ?`
+      )
+      .run([turn, now, sessionId]);
   }
 }

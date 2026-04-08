@@ -229,3 +229,50 @@ test("explicit remember intent persists unsupported global preference as fallbac
   assert.match(combined, /企业微信收藏|默认发到企业微信收藏/i);
   brain.uninstall();
 });
+
+test("session-check enforces every-2-turn checks and writes only on hit", async () => {
+  const home = path.join(os.tmpdir(), `memory-brain-session-check-${Date.now()}`);
+  const brain = await MemoryBrain.initialize({ home });
+  const sessionId = "sess_periodic_check";
+
+  const turn1 = brain.sessionCheck({
+    content: "今天先看一眼日志。",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  assert.equal(turn1.turn_counter, 1);
+  assert.equal(turn1.check_triggered, false);
+  assert.equal(turn1.remembered, false);
+
+  const turn2 = brain.sessionCheck({
+    content: "先继续排查一下，不要急。",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  assert.equal(turn2.turn_counter, 2);
+  assert.equal(turn2.check_triggered, true);
+  assert.equal(turn2.hit, false);
+  assert.equal(turn2.remembered, false);
+
+  const turn3 = brain.sessionCheck({
+    content: "以后默认中文回答。",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  assert.equal(turn3.turn_counter, 3);
+  assert.equal(turn3.check_triggered, false);
+  assert.equal(turn3.remembered, false);
+
+  const turn4 = brain.sessionCheck({
+    content: "以后默认中文回答。",
+    workspacePath: process.cwd(),
+    sessionId
+  });
+  assert.equal(turn4.turn_counter, 4);
+  assert.equal(turn4.check_triggered, true);
+  assert.equal(turn4.hit, true);
+  assert.equal(turn4.remembered, true);
+  assert.ok(turn4.memory_ids.length >= 1);
+
+  brain.uninstall();
+});
